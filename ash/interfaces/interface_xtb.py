@@ -238,17 +238,29 @@ class xTBTheory:
                     self.xtbdir=ash.settings_ash.settings_dict["xtbdir"]
                 except:
                     print(BC.WARNING,"Found no xtbdir variable in ash.settings_ash module either.",BC.END)
-                    try:
-                        self.xtbdir = os.path.dirname(shutil.which('xtb'))
+                    # Shared software environments may expose the xTB executable
+                    # as PDYNAMO3_XTBCOMMAND without adding its directory to PATH.
+                    xtb_command = os.environ.get("PDYNAMO3_XTBCOMMAND")
+                    if xtb_command and os.path.isfile(xtb_command):
+                        self.xtbdir = os.path.dirname(os.path.abspath(xtb_command))
+                        print(
+                            BC.OKGREEN,
+                            "Found xtb from PDYNAMO3_XTBCOMMAND. Setting xtbdir to:",
+                            self.xtbdir,
+                            BC.END
+                        )
+                    else:
+                        xtb_executable = shutil.which('xtb')
+                        if xtb_executable is None:
+                            print("Found no xtb executable in PDYNAMO3_XTBCOMMAND or PATH. Exiting... ")
+                            ashexit()
+                        self.xtbdir = os.path.dirname(xtb_executable)
                         print(
                             BC.OKGREEN,
                             "Found xtb in path. Setting xtbdir to:",
                             self.xtbdir,
                             BC.END
                         )
-                    except:
-                        print("Found no xtb executable in path. Exiting... ")
-                        ashexit()
             else:
                 self.xtbdir = xtbdir
 

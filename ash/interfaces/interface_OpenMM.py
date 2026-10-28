@@ -157,14 +157,12 @@ class OpenMMTheory:
         # Platform (CPU, CUDA, OpenCL) and Parallelization
         self.platform_choice = platform
 
-        if properties is None:
-            self.properties = {}
-        else:
-            self.properties = properties
+        # Keep caller-owned properties unchanged; OpenMMTheory may add defaults below.
+        self.properties = dict(properties) if properties is not None else {}
         if self.platform_choice == 'CPU':
             if self.printlevel > 0:
                 print("Using platform: CPU")
-            self.properties["Threads"] = str(numcores)
+            self.properties.setdefault("Threads", str(numcores))
             #if numcores > 1:
             #    if self.printlevel > 0:
             #        print("Numcores variable provided to OpenMM object. Will use {} cores with OpenMM".format(numcores))

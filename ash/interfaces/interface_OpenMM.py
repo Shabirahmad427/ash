@@ -4448,7 +4448,8 @@ class OpenMM_MDclass:
                             print_time_rel(checkpoint, modulename="set positions update", moduleindex=2, currprintlevel=self.printlevel, currthreshold=2)
                             checkpoint = time.time()
 
-                # Run WrapTheory step to get full system QM+PC gradient.
+                # The OpenMM simulation context provides the MM gradient separately.
+                self.wraptheory_object.skip_openmmtheory_run = True
                 wrap_energy,wrapgradient = self.wraptheory_object.run(current_coords=current_coords, elems=self.fragment.elems, Grad=True,
                                       charge=self.charge, mult=self.mult)
                 

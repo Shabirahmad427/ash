@@ -4449,9 +4449,13 @@ class OpenMM_MDclass:
                             checkpoint = time.time()
 
                 # The OpenMM simulation context provides the MM gradient separately.
+                skip_openmm_run = self.wraptheory_object.skip_openmmtheory_run
                 self.wraptheory_object.skip_openmmtheory_run = True
-                wrap_energy,wrapgradient = self.wraptheory_object.run(current_coords=current_coords, elems=self.fragment.elems, Grad=True,
-                                      charge=self.charge, mult=self.mult)
+                try:
+                    wrap_energy,wrapgradient = self.wraptheory_object.run(current_coords=current_coords, elems=self.fragment.elems, Grad=True,
+                                          charge=self.charge, mult=self.mult)
+                finally:
+                    self.wraptheory_object.skip_openmmtheory_run = skip_openmm_run
                 
                 #NOTE: if WrapTheory contains QMMMTheory then wrapgradient does not have MM contribution (only QM_PC from QM/MM and other theory contributino)
                 print_time_rel(checkpoint, modulename="WrapTheory run", moduleindex=2, currprintlevel=self.printlevel, currthreshold=2)

@@ -379,8 +379,8 @@ class WrapTheory(Theory):
                  theory5_atoms=None, theories_chargemult=None,
                  theory_operators=None, skip_openmmtheory_run=False,
                  periodic=False, periodic_cell_vectors=None, periodic_cell_dimensions=None,
-                 use_linkatoms=True,
-                 linkatom_method='ratio', linkatom_simple_distance=None, linkatom_forceproj_method="adv",
+                 use_linkatoms=False,
+                 linkatom_method='ratio', linkatom_simple_distance=None, linkatom_forceproj_method="lever",
                  linkatom_ratio=0.723, linkatom_type='H', linkatom_conn_scale=1.0, linkatom_conn_tolerance=0.4):
         super().__init__()
         self.theorytype="QM"
@@ -443,7 +443,8 @@ class WrapTheory(Theory):
         self.linkatom_simple_distance = linkatom_simple_distance # For method simple, Default 1.09 Angstrom
         # For method ratio. see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9314059/
         self.linkatom_ratio=linkatom_ratio
-        # Linkatom projection method Options: 'adv', 'lever', 'chain', 'none'
+        # Linkatom projection method Options: 'adv', 'lever', 'none'
+        # Consistent gradients require: linkatom_method='ratio' with 'lever', or 'simple' with 'adv'
         self.linkatom_forceproj_method = linkatom_forceproj_method
         if self.linkatom_forceproj_method is None:
             self.linkatom_forceproj_method="none"
@@ -532,14 +533,12 @@ class WrapTheory(Theory):
 
         nreg = len(region_atoms)
         for i, pair in enumerate(pairs):
-            print(f"i: {i}, pair: {pair}")
             Lgrad = regiongrad[nreg + i]
             Lcoord = linkatoms_dict[pair]
             Qcoord = current_coords[pair[0]]
             Mcoord = current_coords[pair[1]]
             method = self.linkatom_forceproj_method.lower()
             if method == "adv":
-                print("adv")
                 QM1grad, MM1grad = linkatom_force_adv(Qcoord, Mcoord, Lcoord, Lgrad)
             elif method == "lever":
                 QM1grad, MM1grad = linkatom_force_lever(Qcoord, Mcoord, Lcoord, Lgrad)
@@ -617,9 +616,7 @@ class WrapTheory(Theory):
                 print(f"Using charge={theory_charge} and mult={theory_mult} for this theory")
             else:
                 print("Warning: theories_chargemult information was not provided. Checking if charge/mult was provided to WrapTheory.run()")
-                if charge is None or mult is None:
-                    print("Error: Charge or multiplicity has not been specified for WrapTheory.run(). Please provide charge/mult for each theory using theories_chargemult keyword.")
-                    ashexit()
+                # Not an error here: some theories do not need charge/mult. Those that do check it themselves.
                 print(f"Warning: Using charge={charge} and mult={mult} for this theory")
                 theory_charge, theory_mult = charge, mult
 
@@ -683,6 +680,8 @@ class WrapTheory(Theory):
         elif self.theory_operators == "average" or self.theory_operators == "ensemble":
             print("theory_operators option is set to 'average'.")
             self.energy = sum(energies) / len(energies)
+            if pc_gradient is not None:
+                pc_gradient = pc_gradient / len(energies)
 
             if self.printlevel > 1:
                 for count,e in enumerate(energies):
@@ -730,7 +729,7 @@ class WrapTheory(Theory):
                         print(f"Gradient ({self.theories[count].theorynamelabel}):", g)
                     print("Gradient (Combined):", self.gradient)
 
-        if self.printlevel > 2:
+        if Grad and self.printlevel > 3:
             print("Writing out gradient")
             from ash.modules.module_coords import write_coords_all
             write_coords_all(self.gradient, qm_elems, indices=[i for i in range(len(qm_elems))], 

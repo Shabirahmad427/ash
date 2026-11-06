@@ -21,7 +21,7 @@ class ONIOMTheory(Theory):
                  embedding="mechanical", full_pointcharges=None, chargemodel="CM5", dipole_correction=False,
                  fullregion_charge=None, fullregion_mult=None, fragment=None, label=None, 
                  chargeboundary_method="chargeshift", excludeboundaryatomlist=None,
-                 linkatom_method='ratio', linkatom_simple_distance=None, linkatom_forceproj_method="adv",
+                 linkatom_method='ratio', linkatom_simple_distance=None, linkatom_forceproj_method="lever",
                  linkatom_ratio=0.723, linkatom_type='H', printlevel=2, numcores=1,
                  LL_full_theory=None):
         super().__init__()

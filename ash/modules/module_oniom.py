@@ -10,7 +10,7 @@ from ash.functions.functions_general import BC, ashexit, print_time_rel,print_li
 from ash.modules.module_theory import Theory
 from ash.interfaces.interface_ORCA import grabatomcharges_ORCA, ORCATheory
 from ash.interfaces.interface_xtb import grabatomcharges_xTB,grabatomcharges_xTB_output,xTBTheory
-from ash.modules.module_QMMM import linkatom_force_adv, linkatom_force_lever
+from ash.modules.module_QMMM import linkatom_force_adv, linkatom_force_lever, check_linkatom_consistency
 from ash.modules.module_coords import print_coords_for_atoms,get_boundary_atoms,get_linkatom_positions,distance,get_connected_atoms
 
 #TODO: deal with GBW file and ORCA autostart mismatching for different regions and theory-levels
@@ -85,10 +85,11 @@ class ONIOMTheory(Theory):
         self.linkatom_simple_distance = linkatom_simple_distance # For method simple, Default 1.09 Angstrom
         # For method ratio. see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9314059/
         self.linkatom_ratio=linkatom_ratio
-        # Linkatom projection method Options: 'adv', 'lever', 'chain', 'none'
+        # Linkatom projection method Options: 'adv', 'lever', 'none'
         self.linkatom_forceproj_method = linkatom_forceproj_method
         if self.linkatom_forceproj_method is None:
             self.linkatom_forceproj_method="none"
+        check_linkatom_consistency(self.linkatom_method, self.linkatom_forceproj_method)
 
         # Embedding
         # Note: by default no embedding, meaning LL theory for everything

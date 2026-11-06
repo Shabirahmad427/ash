@@ -63,10 +63,11 @@ class QMMMTheory:
         self.linkatom_simple_distance = linkatom_simple_distance # For method simple, Default 1.09 Angstrom
         # For method ratio. see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9314059/
         self.linkatom_ratio=linkatom_ratio
-        # Linkatom projection method Options: 'adv', 'lever', 'chain', 'none'
+        # Linkatom projection method Options: 'adv', 'lever', 'none'
         self.linkatom_forceproj_method = linkatom_forceproj_method
         if self.linkatom_forceproj_method is None:
-            linkatom_forceproj_method="none"
+            self.linkatom_forceproj_method="none"
+        check_linkatom_consistency(self.linkatom_method, self.linkatom_forceproj_method)
 
         # Counter for how often QMMMTheory.run is called
         self.runcalls = 0
@@ -1853,6 +1854,13 @@ def General_QM_PC_gradient(qm_coords,qm_nuc_charges,mol,mm_coords,mm_charges,dm)
         g[i] += f
     return g
 
+
+# Warn about link atom placement and force projection that give a gradient inconsistent with the energy
+def check_linkatom_consistency(linkatom_method, linkatom_forceproj_method):
+    expected = {'ratio': 'lever', 'simple': 'adv'}.get(linkatom_method)
+    if expected is not None and linkatom_forceproj_method.lower() in ('adv', 'lever') and linkatom_forceproj_method.lower() != expected:
+        print(BC.WARNING, f"Warning: linkatom_method='{linkatom_method}' with linkatom_forceproj_method='{linkatom_forceproj_method}' "
+              f"gives a gradient inconsistent with the energy. Use linkatom_forceproj_method='{expected}'.", BC.END)
 
 # This projects the linkatom force onto the respective QM atom and MM atom
 def linkatom_force_adv(Qcoord, Mcoord, Lcoord, Lgrad):

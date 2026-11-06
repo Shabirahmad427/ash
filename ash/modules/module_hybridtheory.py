@@ -17,7 +17,7 @@ from ash.modules.module_theory import Theory
 from ash.modules.module_coords_PBC import cell_params_to_vectors, cell_vectors_to_params
 from ash.interfaces.interface_ORCA import grabatomcharges_ORCA
 from ash.interfaces.interface_xtb import grabatomcharges_xTB,grabatomcharges_xTB_output
-from ash.modules.module_QMMM import linkatom_force_adv, linkatom_force_lever
+from ash.modules.module_QMMM import linkatom_force_adv, linkatom_force_lever, check_linkatom_consistency
 from ash.modules.module_coords import print_coords_for_atoms,get_boundary_atoms,get_linkatom_positions,distance,get_connected_atoms, write_coords_all
 
 class Correction_handler:
@@ -448,6 +448,7 @@ class WrapTheory(Theory):
         self.linkatom_forceproj_method = linkatom_forceproj_method
         if self.linkatom_forceproj_method is None:
             self.linkatom_forceproj_method="none"
+        check_linkatom_consistency(self.linkatom_method, self.linkatom_forceproj_method)
 
         # PBC
         self.periodic=periodic

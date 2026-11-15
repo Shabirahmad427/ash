@@ -1059,8 +1059,6 @@ class Fragment:
                     if 'Fragment:' not in line:
                         print("This is not a valid ASH fragment file. Exiting.")
                         ashexit()
-                if 'Num atoms:' in line:
-                    numatoms = int(line.split()[-1])
                 if 'charge :' in line:
                     self.charge=int(line.split()[-1])
                 if 'mult :' in line:
@@ -1752,7 +1750,6 @@ def get_molecule_members_loop_np2(coords, elems, loopnumber, scale, tol, atomind
     if membs is None:
         membs = []
         membs.append(atomindex)
-        timestampA = time.time()
         membs = get_connected_atoms_np(coords, elems, scale, tol, atomindex)
         # ash.print_time_rel(timestampA, modulename='membs first py')
 
@@ -2274,7 +2271,6 @@ def read_gromacsfile(grofile):
     elems = []
     coords = []
     # TODO: Change coords to numpy array instead
-    grabcoords = False
     numatoms = "unset"
     box_dims = None
     with open(grofile) as cfile:
@@ -2327,7 +2323,6 @@ def read_ambercoordinates(prmtopfile=None, inpcrdfile=None):
     elems = []
     coords = []
     # TODO: Change coords to numpy array instead
-    grabcoords = False
     numatoms = "unset"
     box_dims=[]
     with open(inpcrdfile) as cfile:
@@ -2520,7 +2515,6 @@ def nucchargexyz(file):
 # Calculate total nuclear charge from list of elements
 def nucchargelist(ellist):
     totnuccharge = 0
-    els = []
     warning_issued=False
     for e in ellist:
         try:
@@ -2879,7 +2873,6 @@ def coord2xyz(inputfile):
         x = []
         y = []
         z = []
-        atom = []
         for line in coord[1:-1]:
             x=float(line.split()[0]) * ash.constants.bohr2ang
             y=float(line.split()[1]) * ash.constants.bohr2ang
@@ -3290,7 +3283,6 @@ def QMregionfragexpand(fragment=None, initial_atoms=None, radius=None):
     if fragment is None or initial_atoms is None or radius is None:
         print("Provide fragment, initial_atoms and radius keyword arguments to QMregionfragexpand!")
         ashexit()
-    subsetelems = [fragment.elems[i] for i in initial_atoms]
     # subsetcoords=[fragment.coords[i]for i in initial_atoms ]
     subsetcoords = np.take(fragment.coords, initial_atoms, axis=0)
     if len(fragment.connectivity) == 0:
@@ -3298,9 +3290,7 @@ def QMregionfragexpand(fragment=None, initial_atoms=None, radius=None):
     atomlist = []
 
     for i, c in enumerate(subsetcoords):
-        el = subsetelems[i]
         for index, allc in enumerate(fragment.coords):
-            all_el = fragment.elems[index]
             if index >= len(subsetcoords):
                 dist = distance(c, allc)
                 if dist < radius:
@@ -3320,7 +3310,6 @@ def QMregionfragexpand(fragment=None, initial_atoms=None, radius=None):
                                 wholemol = q
                                 break
 
-                    elematoms = [fragment.elems[i] for i in wholemol]
                     atomlist = atomlist + wholemol
     atomlist = np.unique(atomlist).tolist()
     return atomlist
@@ -3483,7 +3472,6 @@ def get_boundary_atoms(qmatoms, coords, elems, scale, tol, excludeboundaryatomli
 # Using linkatom distance of 1.09 Å for now as default. Makes sense for C-H link atoms.
 def get_linkatom_positions(qm_mm_boundary_dict, qmatoms, coords, elems, linkatom_method='simple', linkatom_type='H',
                            linkatom_simple_distance=None, bondpairs_eq_dict=None, linkatom_ratio=0.723):
-    timeA = time.time()
     print("Inside get_linkatom_positions")
     print("linkatom_type:", linkatom_type)
     print("linkatom_method:", linkatom_method)
@@ -3531,7 +3519,6 @@ def get_linkatom_positions(qm_mm_boundary_dict, qmatoms, coords, elems, linkatom
                     print("Determined ratio:", linkatom_ratio)
                     print("not yet ready")
                     ashexit()
-                r_QM1_MM1 = distance(qmatom_coords, mmatom_coords)
                 # See https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9314059/
                 linkatom_coords = linkatom_ratio *(mmatom_coords - qmatom_coords) + qmatom_coords
                 #linkatom_distance =  r_QM1_MM1 * (bondpairs_eq_dict[(elems[dict_item[0]], 'H')] / bondpairs_eq_dict[(elems[dict_item[0]], elems[dict_item[1]])])
@@ -3651,7 +3638,7 @@ writepdb new-system.pdb
         f.write(psf_script)
 
     # Running PSFgen. Writing to stdout
-    process = sp.run([psfgendir + '/psfgen', 'psfinput.tcl'])
+    sp.run([psfgendir + '/psfgen', 'psfinput.tcl'])
 
 
 def remove_atoms_from_system_CHARMM(fragment=None, psffile=None, topfile=None, atomindices=None, psfgendir=None,
@@ -3679,8 +3666,6 @@ def remove_atoms_from_system_CHARMM(fragment=None, psffile=None, topfile=None, a
     print("")
     # Deleting element and coords for each atom index
     atomindices.sort(reverse=True)
-    lowest_atomindex = atomindices[-1]
-    highest_atomindex = atomindices[0]
     for atomindex in atomindices:
         fragment.delete_atom(atomindex)
     print("")
@@ -3810,7 +3795,7 @@ def add_atoms_to_PSF(resgroup=None, topfile=None, psffile=None, psfgendir=None, 
         f.write(psf_script)
 
     # Running PSFgen. Writing to stdout
-    process = sp.run([psfgendir + '/psfgen', 'psfinput.tcl'])
+    sp.run([psfgendir + '/psfgen', 'psfinput.tcl'])
 
     return
 
@@ -3896,7 +3881,6 @@ def getwaterconstraintslist(openmmtheoryobject=None, atomlist=None, watermodel='
         print("unknown watermodel")
         ashexit()
 
-    atomtypes=openmmtheoryobject.atomtypes
     resnames=openmmtheoryobject.resnames
     elements=openmmtheoryobject.mm_elements
 

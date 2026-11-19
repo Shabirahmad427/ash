@@ -10,7 +10,7 @@ import ash.settings_ash
 from ash.modules.module_theory import Theory
 from ash.functions.functions_general import (
     ashexit, blankline, reverse_lines, print_time_rel, BC, 
-    print_line_with_mainheader, print_if_level, print_module_version, grab_version_from_output
+    print_line_with_mainheader, print_if_level
 )
 import ash.modules.module_coords
 from ash.modules.module_coords import (
@@ -116,7 +116,7 @@ class gxTBTheory(Theory):
             print_time_rel(module_init_time, modulename='gxtb run', moduleindex=2)
             return self.energy
 
-# Now supports 2 runmodes: 'library' (fast Python C-API) or 'inputfile'
+# Now supports 2 runmodes: 'library' (tblite Python API) or 'inputfile'
 class xTBTheory:
     def __init__(self, xtbdir=None, xtbmethod='GFN1', runmode='inputfile', numcores=1, printlevel=2, filename='xtb_',
                  maxiter=500, electronic_temp=300, label=None, accuracy=0.1, hardness_PC=1000, solvent=None,
@@ -191,7 +191,6 @@ class xTBTheory:
         self.xtbmethod = xtbmethod
         self.maxiter = maxiter
         self.runmode = runmode
-        self._version_printed = False
 
         self.electronic_temp = electronic_temp
 
@@ -205,31 +204,18 @@ class xTBTheory:
         os.environ["OMP_NUM_THREADS"] = str(self.numcores)
         # os.environ["MKL_NUM_THREADS"] = "1"
 
-        # New library version. interface via conda: xtb-python
+        # Library mode uses tblite, the maintained Python library backend.
         if self.runmode=='library':
-            print("Using new library-based xTB interface")
-            print("Importing xtb-python library")
+            print("Using tblite-backed library xTB interface")
             try:
-                from xtb.interface import Calculator, Param
+                import tblite.interface
             except Exception as e:
-                print("Problem importing xTB library. Have you installed : conda install -c conda-forge xtb-python  ?")
-                print("pip install typing-extensions  may also be required")
+                print("Problem importing tblite. Install tblite in the ASH Python environment.")
                 print("Full error message:", e)
                 ashexit(code=9)
 
-            # Creating variable and setting to None. Replaced by run
             self.calcobject = None
-            print("xTB method:", self.xtbmethod)
-
-            # Creating solvent object if solvent requested
-            if solvent != None:
-                from xtb.utils import get_solvent, Solvent
-                self.solvent_object = get_solvent(solvent)
-                if self.solvent_object == None:
-                    print("Unknown solvent. Not found in xtb.utils.get_solvent")
-                    ashexit()
-            else:
-                self.solvent_object=None
+            self.solvent_object = solvent
         # Inputfile
         elif self.runmode=='inputfile':
             if xtbdir is None:
@@ -464,13 +450,6 @@ class xTBTheory:
                 elems=None, Grad=False, PC=False, numcores=None, label=None, charge=None, mult=None):
         module_init_time=time.time()
         
-        if self.runmode == 'library':
-            import xtb
-            from xtb.interface import Calculator, Param
-            if not self._version_printed:
-                version_string = print_module_version(xtb, "xTB", distribution_names=["xtb", "xtb-python"])
-                self._version_printed = version_string is not None
-
         if MMcharges is None:
             MMcharges=[]
 
@@ -547,13 +526,6 @@ class xTBTheory:
                                     Grad=Grad, maxiter=self.maxiter, electronic_temp=self.electronic_temp, accuracy=self.accuracy, numcores=numcores,
                                     use_tblite=self.use_tblite, extraflag=self.extraflag)
 
-            xtb_version = None
-            if not self._version_printed:
-                xtb_version = grab_version_from_output(self.filename + '.out', r"\*\s*xtb version\s+([^\s(]+)")
-            if xtb_version is not None:
-                print(f"xTB version: {xtb_version}")
-                self._version_printed = True
-
             if self.printlevel >= 2:
                 print("------------xTB calculation done-----")
 
@@ -608,138 +580,114 @@ class xTBTheory:
 
         elif self.runmode =='library':
             if self.printlevel >= 1:
-                print("------------Running xTB (library)-------------")
+                print("------------Running xTB via tblite (library)-------------")
+            if PC:
+                if self.printlevel >= 1:
+                    print("Note: tblite library mode does not support point charges. "
+                          "Falling back to inputfile mode for this QM/MM step.")
+                # Ensure xtbdir is available for the executable fallback
+                if not hasattr(self, 'xtbdir') or self.xtbdir is None:
+                    xtb_path = shutil.which('xtb')
+                    if xtb_path is None:
+                        print(BC.FAIL, "PC fallback requires the xtb executable but it is not in PATH.", BC.END)
+                        ashexit()
+                    self.xtbdir = os.path.dirname(xtb_path)
+                # Write coord file the same way the inputfile branch does
+                if self.periodic is True:
+                    coordfile="xtb_coord"
+                    ash.interfaces.interface_Turbomole.create_coord_file(
+                        qm_elems, current_coords, write_unit='ANGSTROM',
+                        periodic_info=self.periodic_cell_dimensions, filename=coordfile)
+                else:
+                    coordfile=self.filename + '.xyz'
+                    ash.modules.module_coords.write_xyzfile(qm_elems, current_coords, self.filename, printlevel=self.printlevel)
+                # Create pcharge file
+                if self.hardness == 'elements':
+                    hardness = mm_elems
+                else:
+                    hardness = [self.hardness] * len(MMcharges)
+                create_xtb_pcfile_general(current_MM_coords, MMcharges, hardness=hardness)
+                # Run xtb executable
+                run_xtb_SP(self.xtbdir, self.xtbmethod, coordfile, charge, mult,
+                           printlevel=self.printlevel, PC=PC, solvent=self.solvent_object,
+                           Grad=Grad, maxiter=self.maxiter, electronic_temp=self.electronic_temp,
+                           accuracy=self.accuracy, numcores=numcores,
+                           use_tblite=self.use_tblite, extraflag=self.extraflag)
+                # Grab results
+                num_qmatoms = len(current_coords)
+                num_mmatoms = len(MMcharges)
+                if Grad:
+                    self.energy, self.grad = xtbgradientgrab(num_qmatoms)
+                    if self.energy is None:
+                        self.energy = xtbfinalenergygrab(self.filename+'.out')
+                    if self.periodic:
+                        self.cell_gradient = grab_latticegrad()
+                    self.pcgrad = xtbpcgradientgrab(num_mmatoms)
+                    self.cleanup_temp()
+                    print_time_rel(module_init_time, modulename='xTB run (PC fallback)', moduleindex=2,
+                                   currprintlevel=self.printlevel, currthreshold=1)
+                    return self.energy, self.grad, self.pcgrad
+                else:
+                    self.energy = xtbfinalenergygrab(self.filename+'.out')
+                    self.cleanup_temp()
+                    print_time_rel(module_init_time, modulename='xTB run (PC fallback)', moduleindex=2,
+                                   currprintlevel=self.printlevel, currthreshold=1)
+                    return self.energy
             #Converting Angstroms to Bohr
             coords_au=np.array(current_coords)*ash.constants.ang2bohr
             #Converting element-symbols to nuclear charges
             qm_elems_numbers=np.array(elemstonuccharges(qm_elems))
             assert len(coords_au) == len(qm_elems_numbers)
-            #Choosing method
-            if 'GFN2' in self.xtbmethod.upper():
-                if self.printlevel >= 2:
-                    print("Using GFN2 parameterization")
-                param_method=Param.GFN2xTB
-            elif 'GFN1' in self.xtbmethod.upper():
-                if self.printlevel >= 2:
-                    print("Using GFN1 parameterization")
-                param_method=Param.GFN1xTB
-            elif 'GFN0' in self.xtbmethod.upper():
-                if self.printlevel >= 2:
-                    print("Using GFN0 parameterization")
-                param_method=Param.GFN0xTB
-            elif 'GFNFF' in self.xtbmethod.upper():
-                if self.printlevel >= 2:
-                    print("Using GFNFF parameterization")
-                    print("warning: experimental")
-                param_method=Param.GFNFF
-            elif 'IPEA' in self.xtbmethod.upper() :
-                if self.printlevel >= 2:
-                    print("Using IPEA parameterization")
-                param_method=Param.IPEAxTB
+            method_names = {
+                "GFN1": "GFN1-xTB",
+                "GFN2": "GFN2-xTB",
+                "IPEA": "IPEA1-xTB",
+            }
+            method_key = next((key for key in method_names if key in self.xtbmethod.upper()), None)
+            if method_key is None:
+                raise ValueError(
+                    f"tblite library mode supports GFN1, GFN2, and IPEA1; "
+                    f"{self.xtbmethod!r} is not available. Use runmode='inputfile' for other xTB methods."
+                )
+
+            import tblite.interface as tb
+
+            if self.periodic:
+                calc = tb.Calculator(
+                    method_names[method_key], qm_elems_numbers, coords_au,
+                    charge=charge, uhf=mult-1,
+                    lattice=np.array(self.periodic_cell_vectors) * ash.constants.ang2bohr,
+                    periodic=np.array([True, True, True]),
+                )
             else:
-                print("unknown xtbmethod")
-                ashexit()
+                calc = tb.Calculator(method_names[method_key], qm_elems_numbers, coords_au,
+                                     charge=charge, uhf=mult-1)
+            calc.set("max-iter", self.maxiter)
+            calc.set("temperature", self.electronic_temp * 3.166808578545117e-6)
+            calc.set("accuracy", self.accuracy)
+            calc.set("verbosity", 2 if self.printlevel >= 3 else 1 if self.printlevel == 2 else 0)
+            if self.solvent_object is not None:
+                calc.add("alpb-solvation", self.solvent_object)
 
-            #Creating calculator using Hamiltonian and coordinates
-            #Setting charge and mult
-
-            #first run call: create new object containing coordinates and settings
-            if self.calcobject == None:
-                print("Creating new xTB calc object")
-                # Storing number of elements
-                self.stored_atoms_sum=sum(qm_elems_numbers)
-                self.calcobject = Calculator(param_method, qm_elems_numbers, coords_au, charge=charge, uhf=mult-1)
-                self.calcobject.set_verbosity(self.verbosity)
-                self.calcobject.set_electronic_temperature(self.electronic_temp)
-                self.calcobject.set_max_iterations(self.maxiter)
-                self.calcobject.set_accuracy(self.accuracy)
-                # Solvent
-                if self.solvent_object != None:
-                    print("Setting solvent to:", self.solvent_object)
-                    self.calcobject.set_solvent(self.solvent_object)
-            # next run calls: only update coordinates
-            else:
-                if self.printlevel >= 2:
-                    print("Updating coordinates in xTB calcobject")
-                if sum(qm_elems_numbers) != self.stored_atoms_sum:
-                    print("Warning: Coordinates not consistent with previous elements.")
-                    print("Creating new xTB calc object")
-                    # Storing number of elements
-                    self.stored_atoms_sum=sum(qm_elems_numbers)
-                    self.calcobject = Calculator(param_method, qm_elems_numbers, coords_au, charge=charge, uhf=mult-1)
-                    self.calcobject.set_verbosity(self.verbosity)
-                    self.calcobject.set_electronic_temperature(self.electronic_temp)
-                    self.calcobject.set_max_iterations(self.maxiter)
-                    self.calcobject.set_accuracy(self.accuracy)
-                    # Solvent
-                    if self.solvent_object != None:
-                        print("Setting solvent to:", self.solvent_object)
-                        self.calcobject.set_solvent(self.solvent_object)
-                else:
-                    self.calcobject.update(coords_au)
-
-            #QM/MM pointcharge field
-            #calc.
-            if PC is True:
-                if self.printlevel >= 2:
-                    print("Using PointCharges")
-                mmcharges=np.array(MMcharges)
-                #print("Setting external point charges")
-                #print("num MM charges", len(MMcharges))
-                #print(MMcharges)
-                #print("num MM coords", len(current_MM_coords))
-                #print(current_MM_coords)
-                MMcoords_au=np.array(current_MM_coords)*ash.constants.ang2bohr
-                #print(MMcoords_au)
-                #NOTE: Are these element nuclear charges or what ?
-                numbers=np.array([9999 for i in MMcharges])
-                #print("numbers:", numbers)
-                self.calcobject.set_external_charges(numbers,mmcharges,MMcoords_au)
-
-            #Run
-            #TODO: Can we turn off gradient calculation somewhere?
-            if self.printlevel >= 2:
-                print("Running xtB using {} cores".format(self.numcores))
-            res = self.calcobject.singlepoint()
-            if PC is True:
-                #Releasing charges right away, otherwise they stay on the cached calcobject and mess up the next xtb calc with or without pc-embedding
-                self.calcobject.release_external_charges()
-            if self.printlevel >= 2:
-                print("------------xTB calculation done-------------")
-            if Grad == True:
-                if self.printlevel >= 2:
-                    print("Grad is True")
-                self.energy = res.get_energy()
-                self.grad =res.get_gradient()
-                if self.printlevel >= 2:
-                    print("xtb energy :", self.energy)
-                if PC == True:
-                    #Grab pointcharge gradient from the Results object (xtb-python names it get_pc_gradient).
-                    pcgrad_method = getattr(res, 'get_pc_gradient', getattr(res, 'get_PCgradient', None))
-                    if pcgrad_method is None:
-                        print(BC.WARNING,"This xtb-python version does not wrap the xtb_getPCGradient C-function, so the pointcharge gradient can not be grabbed.",BC.END)
-                        print("If you were trying to use xtb in a QM/MM object then you have to switch to runmode='inputfile' instead")
-                        ashexit()
-                    self.pcgrad = pcgrad_method(len(MMcharges))
-                    if self.printlevel >= 2:
-                        print("------------ENDING XTB-INTERFACE-------------")
-                        print_time_rel(module_init_time, modulename='xTBlib run', moduleindex=2)
-                    return self.energy, self.grad, self.pcgrad
-                else:
-                    if self.printlevel >= 2:
-                        print("------------ENDING XTB-INTERFACE-------------")
-                    if self.printlevel >= 2:
-                        print_time_rel(module_init_time, modulename='xTBlib run', moduleindex=2)
-                    return self.energy, self.grad
-
-            else:
-                #NOTE: Gradient has still been calculated but is ignored. Not sure how to turn off
-                self.energy = res.get_energy()
-                if self.printlevel >= 2:
-                    print("xtb energy :", self.energy)
-                print("------------ENDING XTB-INTERFACE-------------")
-                print_time_rel(module_init_time, modulename='xTBlib run', moduleindex=2)
-                return self.energy
+            self.calcobject = calc
+            res = calc.singlepoint()
+            self.energy = res.get("energy")
+            if self.grab_charges:
+                self.charges = res.get("charges")
+            if self.grab_BOs:
+                self.BOs = res.get("bond-orders")
+            if self.periodic:
+                virial = res.get("virial")
+                cell_au = np.array(self.periodic_cell_vectors) * ash.constants.ang2bohr
+                self.cell_gradient = np.dot(virial, np.linalg.inv(cell_au).T)
+            if Grad:
+                self.grad = res.get("gradient")
+                print_time_rel(module_init_time, modulename='tblite library xTB run', moduleindex=2,
+                               currprintlevel=self.printlevel, currthreshold=1)
+                return self.energy, self.grad
+            print_time_rel(module_init_time, modulename='tblite library xTB run', moduleindex=2,
+                           currprintlevel=self.printlevel, currthreshold=1)
+            return self.energy
 
 # Grab Final single point energy
 def xtbfinalenergygrab(file):
@@ -1257,7 +1205,6 @@ class tbliteTheory(Theory):
             print("Cell vectors (Å)", self.periodic_cell_vectors)
         try:
             import tblite
-            print_module_version(tblite, "tblite", distribution_names=["tblite", "tblite-python"])
         except Exception as e:
             print("Problem importing tblite library. Have you installed tblite properly ?")
             print("See: https://github.com/tblite/tblite")
